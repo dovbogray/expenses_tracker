@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Трекер Витрат</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
+        ul { margin-top: 20px; }
+        li { background: #f0f0f0; margin: 5px 0; padding: 10px; list-style: none; }
+    </style>
+</head>
+<body>
+
+    <h1>Мої витрати</h1>
+    
+    <button id="loadBtn">Завантажити витрати</button>
+
+    <ul id="expensesList"></ul>
+
+    <script>
+        const btn = document.getElementById('loadBtn');
+        const list = document.getElementById('expensesList');
+
+        // Додаємо "слухача подій" на кнопку
+        btn.addEventListener('click', async () => {
+            try {
+                // Запит на сервер
+                const response = await fetch('/expenses');
+
+                // Перетворюємо відповідь у JSON (масив об'єктів)
+                const expenses = await response.json();
+
+                // Очищаємо список перед додаванням 
+                list.innerHTML = '';
+
+                // Проходимося по кожній витраті і малюємо її
+                expenses.forEach(item => {
+                    const li = document.createElement('li');
+                    // Форматуємо вигляд: Назва - Сума (Дата)
+                    li.textContent = `${item.description} — ${item.amount} грн (${item.date})`;
+                    list.appendChild(li);
+                });
+
+            } catch (error) {
+                console.error('Помилка завантаження:', error);
+                alert('Не вдалося завантажити дані');
+            }
+        });
+    </script>
+</body>
+</html>
