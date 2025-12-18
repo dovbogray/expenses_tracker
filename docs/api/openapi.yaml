@@ -1,0 +1,179 @@
+openapi: 3.0.0
+# --- Блок INFO ---
+info:
+  title: Expense Tracker API
+  version: 1.0.0
+  description: Документація API для трекера витрат (поведінка CRUD)
+
+paths:
+  # МАРШРУТ: Робота зі списком (/expenses)
+  /expenses:
+    
+    # --- GET: Отримати список всіх витрат ---
+    get:
+      summary: Отримати список витрат
+      tags: [Expenses]
+      responses:
+        '200': 
+          description: Успішна відповідь (повертає масив)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Expense'
+
+    # --- POST: Створити нову витрату ---
+    post:
+      summary: Створити витрату
+      tags: [Expenses]
+      requestBody: 
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExpenseRequest'
+      responses:
+        '201': 
+          description: Успішно створено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '400':
+          description: Помилка валідації (немає суми або опису)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # МАРШРУТ: Робота з конкретним записом (/expenses/{id})
+  /expenses/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    
+    # --- GET: Отримати деталі однієї витрати ---
+    get:
+      summary: Отримати одну витрату по ID
+      tags: [Expenses]
+      responses:
+        '200':
+          description: Успішно знайдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '404':
+          description: Витрату не знайдено в базі
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    # --- PUT: Оновити (відредагувати) витрату ---
+    put:
+      summary: Оновити дані витрати
+      tags: [Expenses]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateExpenseRequest'
+      responses:
+        '200':
+          description: Оновлено успішно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expense'
+        '400':
+          description: Невірні дані (наприклад, сума текстом)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Витрату з таким ID не знайдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    # --- DELETE: Видалити витрату ---
+    delete:
+      summary: Видалити витрату
+      tags: [Expenses]
+      responses:
+        '204':
+          description: Видалено успішно (тіло відповіді порожнє)
+        '404':
+          description: Такої витрати не існує
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+# КОМПОНЕНТИ:
+components:
+  schemas:
+    # 1. Повна сутність
+    Expense:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        description:
+          type: string
+          example: "Продукти"
+        amount:
+          type: number
+          example: 150.50
+        date:
+          type: string
+          format: date
+          example: "2025-10-27"
+
+    # 2. DTO для створення/оновлення
+    CreateExpenseRequest:
+      type: object
+      required:
+        - description
+        - amount
+      properties:
+        description:
+          type: string
+          example: "Таксі"
+        amount:
+          type: number
+          example: 200.00
+        date:
+          type: string
+          format: date
+          example: "2025-10-28"
+
+    # 3. Універсальна помилка
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: integer
+              description: HTTP код помилки
+              example: 404
+            message:
+              type: string
+              description: Зрозумілий опис проблеми
+              example: "Transaction with ID 123 not found"
+            timestamp:
+              type: string
+              format: date-time

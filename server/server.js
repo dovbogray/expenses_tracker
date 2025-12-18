@@ -1,62 +1,50 @@
 const express = require('express');
-require('dotenv').config();
+const path = require('path');
 const initDB = require('./db');
-const PORT = process.env.PORT || 5000;
+require('dotenv').config();
+
+const TransactionRepository = require('../src/infrastructure/repositories/TransactionRepository');
+const TransactionService = require('../src/application/services/TransactionService');
+const TransactionController = require('../src/api/controllers/TransactionController');
+const createExpenseRoutes = require('../src/api/routes/expenses.routes');
 
 const app = express();
+const PORT = process.env.PORT || 5000;
+
+// 2. Налаштування Express
 app.use(express.json());
-app.use(express.static('client'));
 
-let db;
+// Налаштування шляху до папки client (вона на рівень вище)
+const clientPath = path.join(__dirname, '..', 'client');
+app.use(express.static(clientPath));
 
-// Ініціалізація БД перед початком роботи
-initDB().then((database) => {
-    db = database;
-    console.log("База даних підключена")
-})
-
-
-app.get('/expenses', async (req, res) => {
-    try {
-        const expenses = await db.all('SELECT * FROM expenses');
-        res.json(expenses)
-
-    } catch (error) {
-        res.status(500).json({error: error.message});
-    }  
-})
-
-app.post('/expenses', async (req, res) => {
-  try {
-    const { description, amount, date } = req.body;
-
-    // Валідація: перевіряємо, чи прийшли дані
-    if (!description || !amount) {
-      return res.status(400).json({ error: 'Поле description та amount обов’язкові' });
-    }
-
-    // Якщо дата не прийшла, беремо поточну
-    const expenseDate = date || new Date().toISOString();
-
-    // Виконуємо вставку. result міститиме lastID
-    const result = await db.run(
-      'INSERT INTO expenses (description, amount, date) VALUES (?, ?, ?)',
-      [description, amount, expenseDate]
-    );
-
-    // Повертаємо створений об'єкт
-    res.status(201).json({
-      id: result.lastID,
-      description,
-      amount,
-      date: expenseDate
-    });
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`server start on http://localhost:${PORT}`);
-})
+async function startServer() {
+    try {
+        const db = await initDB();
+        console.log("✅ База даних підключена");
+
+        
+        const transactionRepo = new TransactionRepository(db);
+        
+        const transactionService = new TransactionService(transactionRepo);
+        
+        const transactionController = new TransactionController(transactionService);
+
+        app.use('/expenses', createExpenseRoutes(transactionController));
+
+        app.listen(PORT, () => {
+            console.log(`🚀 Server started on http://localhost:${PORT}`);
+        });
+
+    } catch (error) {
+        console.error('❌ Не вдалося запустити сервер:', error);
+        process.exit(1);
+    }
+}
+
+// Запускаємо все
+startServer();

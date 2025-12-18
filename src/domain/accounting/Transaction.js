@@ -41,7 +41,6 @@ class Transaction {
             throw new Error('Invalid date format');
         }
         if (d > new Date()) {
-             // Це приклад бізнес-правила: не можна записати витрату на завтра
              console.warn('Warning: Transaction date is in the future');
         }
     }
