@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon server/server.js"
+    "start": "nodemon server/server.js",
+    "test": "node test/unit/TransactionServicesTest.js"
   },
   "keywords": [],
   "author": "Veremko Artyr",
