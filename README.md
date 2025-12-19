@@ -31,28 +31,29 @@
 ### Варіант 1: Через Docker (Рекомендовано)
 
 **1. Збірка образу**
-
+```bash
 docker build -t expense-tracker-api .
-
+```
 **2. Запуск контейнера. Сервер буде доступний на порту 5000.**
-
+```bash
 docker run -d -p 5000:5000 --name expense-container --rm expense-tracker-api
-
+```
 **3. Зупинка контейнера.**
-
+```bash
 docker stop expense-container
-
+```
 ### Варіант 2: Через Node.js (Для розробки)
 
 **1. Встановлення залежностей**
-
+```bash
 npm install
-
+```
 **2. Запуск тестів**
-
+```bash
 npm test
-
+```
 
 **3. Запуск сервера**
-
+```bash
 npm start
+```
