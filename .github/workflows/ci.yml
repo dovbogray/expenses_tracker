@@ -1,0 +1,60 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Дозволи
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # --- РОБОТА 1: Тестування ---
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code (Клонуємо репозиторій)
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (Ставимо ноду)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install Dependencies (Ставимо бібліотеки)
+        run: npm ci
+
+      - name: Run Tests (Запускаємо твій скрипт)
+        run: npm test
+
+  # --- РОБОТА 2: Збірка і Публікація (тільки для main) ---
+  build-and-push:
+    name: Build & Push Docker Image
+    needs: test # Запускати тільки якщо тести пройшли успішно!
+    runs-on: ubuntu-latest
+    # Виконувати тільки якщо це прямий пуш у main (після злиття)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR (Логін у реєстр контейнерів)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push (Збірка і відправка)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/dovbogray/expense-tracker-api:latest
