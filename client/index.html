@@ -3,51 +3,276 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Трекер Витрат</title>
+    <title>Трекер Витрат (Smart Client)</title>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; }
-        ul { margin-top: 20px; }
-        li { background: #f0f0f0; margin: 5px 0; padding: 10px; list-style: none; }
+        body { font-family: sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+        
+        /* Стилі для банера "Degraded Mode" */
+        #connection-banner {
+            display: none; /* Схований за замовчуванням */
+            background: #ffebee; 
+            color: #c62828; 
+            padding: 15px; 
+            text-align: center; 
+            border: 1px solid #ef9a9a;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .form-group { margin-bottom: 15px; }
+        input { padding: 8px; font-size: 16px; width: 100%; box-sizing: border-box; margin-top: 5px; }
+        label { font-weight: bold; }
+        
+        button { 
+            padding: 10px 20px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            background-color: #4CAF50; 
+            color: white; 
+            border: none; 
+            border-radius: 4px; 
+        }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        ul { margin-top: 20px; padding: 0; }
+        li { background: #f9f9f9; margin: 5px 0; padding: 10px; list-style: none; border-bottom: 1px solid #ddd; }
+        .refresh-btn { background-color: #2196F3; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-    <h1>Мої витрати</h1>
-    
-    <button id="loadBtn">Завантажити витрати</button>
+    <div id="connection-banner">
+        ⚠️ З'єднання нестабільне. Працюємо в обмеженому режимі. Повторюємо спроби...
+    </div>
 
+    <h1>Мої витрати</h1>
+
+    <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
+        <h3>Додати витрату</h3>
+        <div class="form-group">
+            <label for="desc">Опис:</label>
+            <input type="text" id="desc" placeholder="Наприклад: Кава">
+        </div>
+        <div class="form-group">
+            <label for="amount">Сума (грн):</label>
+            <input type="number" id="amount" placeholder="0.00">
+        </div>
+        <button id="submitBtn">Додати</button>
+    </div>
+
+    <button id="loadBtn" class="refresh-btn">🔄 Оновити список</button>
     <ul id="expensesList"></ul>
 
     <script>
-        const btn = document.getElementById('loadBtn');
+        // --- 1. UI ЕЛЕМЕНТИ ---
+        const banner = document.getElementById('connection-banner');
+        const submitBtn = document.getElementById('submit-btn'); 
+        const loadBtn = document.getElementById('loadBtn');
         const list = document.getElementById('expensesList');
+        const descInput = document.getElementById('desc');
+        const amountInput = document.getElementById('amount');
 
-        // Додаємо "слухача подій" на кнопку
-        btn.addEventListener('click', async () => {
+        // --- 2. ДОПОМІЖНІ ФУНКЦІЇ ---
+
+        // Генератор UUID (для ключів ідемпотентності)
+        function uuidv4() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Функція очікування (pause)
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // Перемикач режиму "Degraded Mode" (Червоний банер)
+        function setDegradedMode(isDegraded) {
+            if (isDegraded) {
+                banner.style.display = 'block';
+                // Ми не блокуємо інтерфейс повністю, але попереджаємо користувача
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        // --- 3. ROBUST FETCH (Незламний запит) ---
+        // Це головна логіка завдання: Ретраї, Таймаути, Ідемпотентність
+        async function robustFetch(url, options = {}, retries = 3) {
+            let attempt = 0;
+            
+            // Якщо це POST запит, генеруємо ключ один раз.
+            // При ретраях (спробі №2, №3) ключ буде ТОЙ САМИЙ.
+            const isMutation = options.method === 'POST' || options.method === 'PUT';
+            const idempotencyKey = isMutation ? (options.headers?.['Idempotency-Key'] || uuidv4()) : undefined;
+
+            const headers = {
+                'Content-Type': 'application/json',
+                ...options.headers
+            };
+
+            if (idempotencyKey) {
+                headers['Idempotency-Key'] = idempotencyKey;
+            }
+
+            while (attempt <= retries) {
+                const controller = new AbortController();
+                // Таймаут клієнта: якщо сервер мовчить 5 секунд — обриваємо
+                const timeoutMs = options.timeout || 5000; 
+                const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+                try {
+                    // Якщо це повторна спроба, логуємо це
+                    if (attempt > 0) console.log(`🔄 Спроба ${attempt + 1}/${retries + 1}...`);
+                    
+                    const response = await fetch(url, {
+                        ...options,
+                        headers: headers,
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId); // Таймер не знадобився, відповідь прийшла
+
+                    // Успіх
+                    if (response.ok) {
+                        setDegradedMode(false); // Все добре, ховаємо банер
+                        return response;
+                    }
+
+                    // Обробка 429 (Too Many Requests)
+                    if (response.status === 429) {
+                        const retryAfter = response.headers.get('Retry-After');
+                        const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 2000;
+                        console.warn(`⏳ Ліміт запитів. Чекаємо ${waitTime}мс...`);
+                        await wait(waitTime);
+                        continue; // Пробуємо знову без збільшення лічильника спроб (або з ним)
+                    }
+
+                    // Помилки клієнта (400, 404) не виправляються повтором
+                    if (response.status < 500) {
+                        const err = await response.json();
+                        throw new Error(err.error?.message || `Помилка клієнта: ${response.status}`);
+                    }
+
+                    // Помилка сервера (500) -> йдемо в catch для повтору
+                    throw new Error(`Помилка сервера: ${response.status}`);
+
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    
+                    const isLastAttempt = attempt === retries;
+                    
+                    // Чи варто повторювати? (Помилка мережі, таймаут або 5xx)
+                    const shouldRetry = error.name === 'AbortError' || 
+                                      error.message.includes('Failed to fetch') || 
+                                      error.message.includes('Помилка сервера');
+
+                    if (!shouldRetry || isLastAttempt) {
+                        if (isLastAttempt) setDegradedMode(true); // Все погано
+                        throw error;
+                    }
+
+                    // Експоненційна затримка (Backoff): 500ms, 1000ms, 2000ms...
+                    const backoff = Math.pow(2, attempt) * 500 + Math.random() * 500;
+                    
+                    setDegradedMode(true); // Показуємо банер, що є проблеми
+                    await wait(backoff);
+                    attempt++;
+                }
+            }
+        }
+
+        // --- 4. БІЗНЕС ЛОГІКА ---
+
+        // Завантаження списку (GET)
+        async function loadExpenses() {
             try {
-                // Запит на сервер
-                const response = await fetch('/expenses');
-
-                // Перетворюємо відповідь у JSON (масив об'єктів)
-                const expenses = await response.json();
-
-                // Очищаємо список перед додаванням 
+                loadBtn.disabled = true;
+                loadBtn.textContent = 'Завантаження...';
                 list.innerHTML = '';
 
-                // Проходимося по кожній витраті і малюємо її
+                const res = await robustFetch('/expenses', { method: 'GET' });
+                const expenses = await res.json();
+
                 expenses.forEach(item => {
                     const li = document.createElement('li');
-                    // Форматуємо вигляд: Назва - Сума (Дата)
-                    li.textContent = `${item.description} — ${item.amount} грн (${item.date})`;
+                    li.textContent = `${item.description} — ${item.amount} грн (${item.date?.split('T')[0]})`;
                     list.appendChild(li);
                 });
+            } catch (error) {
+                console.error(error);
+                alert('Не вдалося завантажити список. Перевірте консоль.');
+            } finally {
+                loadBtn.disabled = false;
+                loadBtn.textContent = '🔄 Оновити список';
+            }
+        }
+
+        // Створення витрати (POST)
+        async function addExpense() {
+            const description = descInput.value;
+            const amount = parseFloat(amountInput.value);
+
+            if (!description || !amount) {
+                alert('Заповніть всі поля!');
+                return;
+            }
+
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = true;
+            btn.textContent = 'Збереження...';
+
+            try {
+                // Використовуємо robustFetch. Якщо мережа блимне, він сам повторить запит.
+                // Ключ ідемпотентності згенерується всередині автоматично.
+                const res = await robustFetch('/expenses', {
+                    method: 'POST',
+                    body: JSON.stringify({ description, amount })
+                });
+
+                const result = await res.json();
+                
+                // Перевіряємо Request ID (для завдання)
+                const reqId = res.headers.get('X-Request-Id');
+                console.log(`✅ Успіх! Request-ID: ${reqId}`, result);
+
+                // Очищаємо форму
+                descInput.value = '';
+                amountInput.value = '';
+                
+                // Оновлюємо список
+                loadExpenses();
+                alert('Успішно додано!');
 
             } catch (error) {
-                console.error('Помилка завантаження:', error);
-                alert('Не вдалося завантажити дані');
+                console.error(error);
+                alert(`Помилка: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Додати';
             }
-        });
+        }
+
+        // Health Check при старті (Вимога 1с таймаут)
+        async function checkHealth() {
+            try {
+                // Тут ставимо жорсткий таймаут 1000мс (1с)
+                await robustFetch('/health', { method: 'GET', timeout: 1000 }, 1);
+                console.log("Health check: OK 🟢");
+            } catch (e) {
+                console.warn("Health check: Failed 🔴 (Server might be slow or down)");
+                setDegradedMode(true);
+            }
+        }
+
+        // --- 5. ЗАПУСК ---
+        loadBtn.addEventListener('click', loadExpenses);
+        document.getElementById('submitBtn').addEventListener('click', addExpense);
+        
+        // При завантаженні сторінки
+        checkHealth();
+        loadExpenses();
+
     </script>
 </body>
 </html>
