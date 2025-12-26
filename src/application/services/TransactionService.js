@@ -12,8 +12,8 @@ class TransactionService {
             null, 
             dto.amount, 
             dto.description, 
-            1, // categoryId (поки хардкод)
-            1, // userId (поки хардкод)
+            1, 
+            1, 
             dto.date
         );
 
